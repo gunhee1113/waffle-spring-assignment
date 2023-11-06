@@ -17,3 +17,4 @@ spring:
 cache:
   ttl: 10s
   size: 100
+

@@ -1,7 +1,18 @@
 package com.wafflestudio.seminar.spring2023._web.log
 
+import com.fasterxml.jackson.databind.JsonNode
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.databind.util.JSONPObject
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import org.slf4j.LoggerFactory
+import org.springframework.http.HttpEntity
+import org.springframework.http.HttpHeaders
+import org.springframework.http.HttpRequest
+import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Component
+import org.springframework.web.client.RestTemplate
+import org.springframework.web.client.postForEntity
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Future
 
 interface AlertSlowResponse {
@@ -29,8 +40,23 @@ data class SlowResponse(
 @Component
 class AlertSlowResponseImpl : AlertSlowResponse {
     private val logger = LoggerFactory.getLogger(javaClass)
+    private val slackToken =  "xoxb-5766809406786-6098325284464-zP8LXXRQtHaKHeirX3U1OkOd"
 
     override operator fun invoke(slowResponse: SlowResponse): Future<Boolean> {
-        TODO()
+        logger.warn("[API-RESPONSE] ${slowResponse.method} ${slowResponse.path}, took ${slowResponse.duration}ms, gunhee1113")
+        val headers = HttpHeaders()
+        headers.add("Authorization", "Bearer $slackToken")
+        headers.add("Content-Type", "application/json")
+        val map = mapOf(
+            "text" to "[API-RESPONSE] ${slowResponse.method} ${slowResponse.path}, took ${slowResponse.duration}ms, gunhee1113",
+            "channel" to "#spring-assignment-channel")
+        val requestObject = ObjectMapper().writeValueAsString(map)
+        val request = HttpEntity(requestObject, headers)
+        val restTemplate = RestTemplate()
+        val response = restTemplate.postForEntity<String>("https://slack.com/api/chat.postMessage", request)
+        val jsonNode = ObjectMapper().readTree(response.body)
+        val future = CompletableFuture<Boolean>()
+        future.complete(jsonNode.get("ok").asBoolean())
+        return future
     }
 }

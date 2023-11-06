@@ -22,12 +22,12 @@ class CustomPlaylistServiceTest @Autowired constructor(
 
     @Test
     fun `커스텀 플레이리스트 생성시, 자동 생성되는 제목은 내 플레이리스트 #${유저의 커스텀 플레이리스트 갯수 + 1}`() {
-        val created = customPlaylistService.create(userId = 1L)
+        val created = customPlaylistService.create(userId = 2L)
 
         assertThat(created.title).isEqualTo("내 플레이리스트 #1")
         assertThat(created.songCnt).isEqualTo(0)
 
-        val created2 = customPlaylistService.create(userId = 1L)
+        val created2 = customPlaylistService.create(userId = 2L)
 
         assertThat(created2.title).isEqualTo("내 플레이리스트 #2")
         assertThat(created.songCnt).isEqualTo(0)

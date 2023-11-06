@@ -1,13 +1,23 @@
 package com.wafflestudio.seminar.spring2023.playlist.service
 
+import com.wafflestudio.seminar.spring2023.playlist.repository.PlaylistRepository
+import com.wafflestudio.seminar.spring2023.playlist.repository.PlaylistViewEntity
+import com.wafflestudio.seminar.spring2023.playlist.repository.PlaylistViewRepository
 import com.wafflestudio.seminar.spring2023.playlist.service.SortPlaylist.Type
+import org.springframework.scheduling.annotation.Async
 import org.springframework.stereotype.Service
+import org.springframework.transaction.support.TransactionTemplate
+import java.time.Duration
 import java.time.LocalDateTime
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Future
 
 @Service
-class PlaylistViewServiceImpl : PlaylistViewService, SortPlaylist {
+class PlaylistViewServiceImpl(
+    private val playlistViewRepository: PlaylistViewRepository,
+    private val playlistRepository: PlaylistRepository,
+    private val transactionTemplate: TransactionTemplate,
+) : PlaylistViewService, SortPlaylist {
 
     /**
      * 스펙:
@@ -22,14 +32,42 @@ class PlaylistViewServiceImpl : PlaylistViewService, SortPlaylist {
      *  3. create 함수가 실패해도, 플레이리스트 조회 API 응답은 성공해야 한다.
      *  4. Future가 리턴 타입인 이유를 고민해보며 구현하기.
      */
+
+    @Async
     override fun create(playlistId: Long, userId: Long, at: LocalDateTime): Future<Boolean> {
-        return CompletableFuture.completedFuture(false) // FIXME
+        val lastView = playlistViewRepository.findByPlaylistIdAndUserId(playlistId, userId)
+        if(lastView!=null){
+            if(Duration.between(lastView.createdAt, at).seconds<60){
+                return CompletableFuture.completedFuture(false)
+            }
+        }
+        transactionTemplate.execute {
+            val playlistViewEntity = PlaylistViewEntity(
+                playlistId = playlistId,
+                userId = userId,
+                createdAt = at,
+            )
+            playlistViewRepository.save(playlistViewEntity)
+            val playlist = playlistRepository.findByIdForUpdate(playlistId)
+            playlist.viewCnt+=1
+            playlistRepository.save(playlist)
+        }
+        return CompletableFuture.completedFuture(true)
     }
 
     override fun invoke(playlists: List<PlaylistBrief>, type: Type, at: LocalDateTime): List<PlaylistBrief> {
         return when (type) {
             Type.DEFAULT -> playlists
-            else -> TODO("Not yet implemented")
+            Type.VIEW -> playlists
+                .map { it -> playlistRepository.findById(it.id).get() }
+                .sortedByDescending { it.viewCnt }
+                .map { it -> PlaylistBrief(it.id, it.title, it.subtitle, it.image) }
+            Type.HOT -> playlists
+                .map { it -> playlistRepository.findById(it.id).get() }
+                .sortedByDescending { it -> playlistViewRepository.findByPlaylistId(it.id)
+                    .filter { Duration.between(it.createdAt, at).seconds < 3600 }.size
+                }
+                .map { it -> PlaylistBrief(it.id, it.title, it.subtitle, it.image) }
         }
     }
 }
