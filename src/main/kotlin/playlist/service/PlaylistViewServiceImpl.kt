@@ -10,6 +10,7 @@ import org.springframework.transaction.support.TransactionTemplate
 import java.time.Duration
 import java.time.LocalDateTime
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.Executors
 import java.util.concurrent.Future
 
 @Service
@@ -32,26 +33,28 @@ class PlaylistViewServiceImpl(
      *  3. create 함수가 실패해도, 플레이리스트 조회 API 응답은 성공해야 한다.
      *  4. Future가 리턴 타입인 이유를 고민해보며 구현하기.
      */
+    private val threads = Executors.newFixedThreadPool(5)
 
     @Async
     override fun create(playlistId: Long, userId: Long, at: LocalDateTime): Future<Boolean> {
         val lastView = playlistViewRepository.findByPlaylistIdAndUserId(playlistId, userId)
-        if(lastView!=null){
-            if(Duration.between(lastView.createdAt, at).seconds<60){
-                return CompletableFuture.completedFuture(false)
+        if(lastView.isNotEmpty() && lastView.filter { Duration.between(it.createdAt, at).seconds<60 }.isNotEmpty()){
+            return CompletableFuture.completedFuture(false)
+        }
+        val future = threads.submit{
+            transactionTemplate.execute {
+                val playlistViewEntity = PlaylistViewEntity(
+                    playlistId = playlistId,
+                    userId = userId,
+                    createdAt = at,
+                )
+                playlistViewRepository.save(playlistViewEntity)
+                val playlist = playlistRepository.findByIdForUpdate(playlistId)
+                playlist.viewCnt+=1
+                playlistRepository.save(playlist)
             }
         }
-        transactionTemplate.execute {
-            val playlistViewEntity = PlaylistViewEntity(
-                playlistId = playlistId,
-                userId = userId,
-                createdAt = at,
-            )
-            playlistViewRepository.save(playlistViewEntity)
-            val playlist = playlistRepository.findByIdForUpdate(playlistId)
-            playlist.viewCnt+=1
-            playlistRepository.save(playlist)
-        }
+        future.get()
         return CompletableFuture.completedFuture(true)
     }
 
